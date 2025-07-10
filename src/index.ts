@@ -78,7 +78,8 @@ async function main() {
 
     if (result) {
         fs.writeFileSync('output.txt', result.text);
-        console.log("Itinerary written to output.txt");
+        console.log(result.text);
+        console.log("\nItinerary also written to output.txt");
     }
 }
 
