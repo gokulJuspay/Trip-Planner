@@ -37,10 +37,14 @@ Check out a video of the trip planner in action: [Trip Planner Demo](https://dri
 
 ### Configuration
 
-1.  Create a `.env` file in the root of the project.
-2.  Add your AI provider's API key to the `.env` file. For example:
+1.  Create a `.env` file in the root of the project by copying the `.env.example` file:
+    ```bash
+    cp .env.example .env
+    ```
+2.  Add your AI provider's API key and your Brave Search API key to the `.env` file. For example:
     ```
     OPENAI_API_KEY="sk-your-openai-key"
+    BRAVE_API_KEY="your-brave-api-key"
     ```
 
 ### Usage

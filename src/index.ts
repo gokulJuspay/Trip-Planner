@@ -1,6 +1,7 @@
 import { createBestAIProvider } from "@juspay/neurolink";
 import * as readlineSync from 'readline-sync';
 import * as fs from 'fs';
+import { BraveSearch } from 'brave-search';
 
 const promptTemplate = `
 You are an intelligent travel assistant helping users plan personalized, optimized, and realistic daily travel itineraries. The user will provide their destination, travel dates, trip type, and preferences. Based on that, you will generate a full-day-by-day itinerary that includes:
@@ -36,6 +37,15 @@ You are an intelligent travel assistant helping users plan personalized, optimiz
 Your entire response must be in plain text. Do not use any markdown.
 `;
 
+async function searchRealTimeInfo(query: string): Promise<string> {
+    const brave = new BraveSearch(process.env.BRAVE_API_KEY || '');
+    const searchResults = await brave.webSearch(query);
+    if (searchResults && searchResults.web) {
+        return searchResults.web.results.map((r: any) => r.description).join('\n');
+    }
+    return '';
+}
+
 interface UserInfo {
     destination: string;
     start_date: string;
@@ -67,19 +77,34 @@ async function main() {
         extra_notes: readlineSync.question('Enter any extra notes: '),
     };
 
-    const prompt = formatPrompt(userInfo);
+    const searchQueries = [
+        `events and festivals in ${userInfo.destination} between ${userInfo.start_date} and ${userInfo.end_date}`,
+        `weather forecast for ${userInfo.destination} between ${userInfo.start_date} and ${userInfo.end_date}`
+    ];
+
+    let realTimeInfo = '';
+    for (const query of searchQueries) {
+        realTimeInfo += await searchRealTimeInfo(query) + '\n';
+    }
+
+    const prompt = formatPrompt(userInfo) + "\n\n## Real-time Information:\n" + realTimeInfo;
 
     // Auto-selects best available provider
     const provider = await createBestAIProvider();
-    const result = await provider.generateText({
+    const result = await provider.streamText({
         prompt: prompt,
         timeout: "120s", // Optional: Set custom timeout (default: 30s)
     });
 
     if (result) {
-        fs.writeFileSync('output.txt', result.text);
-        console.log(result.text);
-        console.log("\nItinerary also written to output.txt");
+        let fullText = "";
+        for await (const chunk of result.textStream) {
+            fullText += chunk;
+            process.stdout.write(chunk);
+        }
+
+        fs.writeFileSync('output.txt', fullText);
+        console.log("\n\nItinerary also written to output.txt");
     }
 }
 
