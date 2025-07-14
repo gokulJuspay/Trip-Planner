@@ -2,6 +2,7 @@ import { createBestAIProvider } from "@juspay/neurolink";
 import * as readlineSync from 'readline-sync';
 import * as fs from 'fs';
 import { BraveSearch } from 'brave-search';
+import axios from 'axios';
 
 const promptTemplate = `
 You are an intelligent travel assistant helping users plan personalized, optimized, and realistic daily travel itineraries. The user will provide their destination, travel dates, trip type, and preferences. Based on that, you will generate a full-day-by-day itinerary that includes:
@@ -37,11 +38,43 @@ You are an intelligent travel assistant helping users plan personalized, optimiz
 Your entire response must be in plain text. Do not use any markdown.
 `;
 
+async function getFlightData(source: string, destination: string): Promise<string> {
+    const options = {
+        method: 'GET',
+        url: 'https://flight-data-aggregator.p.rapidapi.com/search',
+        params: {
+            'source-iata': source,
+            'destination-iata': destination,
+            'date': '2025-09-01',
+            'pax': '1'
+        },
+        headers: {
+            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY || '',
+            'X-RapidAPI-Host': 'flight-data-aggregator.p.rapidapi.com'
+        }
+    };
+
+    try {
+        const response = await axios.request(options);
+        return JSON.stringify(response.data);
+    } catch (error) {
+        console.error("Error fetching flight data:", error);
+        return '';
+    }
+}
+
 async function searchRealTimeInfo(query: string): Promise<string> {
-    const brave = new BraveSearch(process.env.BRAVE_API_KEY || '');
-    const searchResults = await brave.webSearch(query);
-    if (searchResults && searchResults.web) {
-        return searchResults.web.results.map((r: any) => r.description).join('\n');
+    try {
+        const brave = new BraveSearch(process.env.BRAVE_API_KEY || '');
+        const searchResults = await brave.webSearch(query);
+        if (searchResults && searchResults.web && searchResults.web.results) {
+            return searchResults.web.results.map((r: any) => r.description).join('\n');
+        }
+    } catch (error: any) {
+        if (error.message && error.message.includes('422')) {
+            return `Could not find real-time information for the provided location.`;
+        }
+        console.error(`Error fetching real-time info for query "${query}":`, error);
     }
     return '';
 }
@@ -66,8 +99,19 @@ function formatPrompt(userInfo: UserInfo): string {
 }
 
 async function main() {
+    let destination = '';
+    while (destination.length < 4) {
+        destination = readlineSync.question('Enter your destination (at least 4 characters): ');
+        if (destination.length < 4) {
+            console.log("Destination is too short. Please enter a more specific location.");
+        }
+    }
+
+    const source = readlineSync.question('Enter the source airport IATA code for your flight: ');
+    const destinationForFlight = readlineSync.question('Enter the destination airport IATA code for your flight: ');
+
     const userInfo: UserInfo = {
-        destination: readlineSync.question('Enter your destination: '),
+        destination: destination,
         start_date: readlineSync.question('Enter the start date (YYYY-MM-DD): '),
         end_date: readlineSync.question('Enter the end date (YYYY-MM-DD): '),
         trip_type: readlineSync.question('Enter the type of trip (e.g., business, leisure, adventure): '),
@@ -78,14 +122,17 @@ async function main() {
     };
 
     const searchQueries = [
-        `events and festivals in ${userInfo.destination} between ${userInfo.start_date} and ${userInfo.end_date}`,
-        `weather forecast for ${userInfo.destination} between ${userInfo.start_date} and ${userInfo.end_date}`
+        `events and festivals in ${userInfo.destination}`,
+        `weather forecast for ${userInfo.destination}`
     ];
 
     let realTimeInfo = '';
     for (const query of searchQueries) {
         realTimeInfo += await searchRealTimeInfo(query) + '\n';
     }
+
+    const flightData = await getFlightData(source, destinationForFlight);
+    realTimeInfo += `\n\n## Flight Information:\n${flightData}`;
 
     const prompt = formatPrompt(userInfo) + "\n\n## Real-time Information:\n" + realTimeInfo;
 

@@ -41,10 +41,11 @@ Check out a video of the trip planner in action: [Trip Planner Demo](https://dri
     ```bash
     cp .env.example .env
     ```
-2.  Add your AI provider's API key and your Brave Search API key to the `.env` file. For example:
+2.  Add your AI provider's API key, your Brave Search API key, and your RapidAPI key to the `.env` file. For example:
     ```
     OPENAI_API_KEY="sk-your-openai-key"
     BRAVE_API_KEY="your-brave-api-key"
+    RAPIDAPI_KEY="your-rapidapi-key"
     ```
 
 ### Usage
