@@ -3,6 +3,9 @@ import * as readlineSync from 'readline-sync';
 import * as fs from 'fs';
 import { BraveSearch } from 'brave-search';
 import axios from 'axios';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 const promptTemplate = `
 You are an intelligent travel assistant helping users plan personalized, optimized, and realistic daily travel itineraries. The user will provide their destination, travel dates, trip type, and preferences. Based on that, you will generate a full-day-by-day itinerary that includes:
@@ -13,6 +16,7 @@ You are an intelligent travel assistant helping users plan personalized, optimiz
 - Breaks, buffer time, and transit duration
 - Local cultural tips or fun facts (1 per day)
 - A packing tip or weather advice based on forecast
+- Flight details from the real-time information
 - respond in plain text only. Your entire response must be plain text, with no markdown formatting such as headers, bolding, or lists.
 
 ## User Info:
@@ -38,28 +42,50 @@ You are an intelligent travel assistant helping users plan personalized, optimiz
 Your entire response must be in plain text. Do not use any markdown.
 `;
 
-async function getFlightData(source: string, destination: string): Promise<string> {
+async function getFlightData(fromId: string, toId: string, departDate: string, returnDate: string): Promise<string> {
+    
+    
     const options = {
         method: 'GET',
-        url: 'https://flight-data-aggregator.p.rapidapi.com/search',
+        url: 'https://booking-com15.p.rapidapi.com/api/v1/flights/searchFlights',
         params: {
-            'source-iata': source,
-            'destination-iata': destination,
-            'date': '2025-09-01',
-            'pax': '1'
+            fromId: fromId,
+            toId: toId,
+            departDate: departDate,
+            returnDate: returnDate,
+            stops: 'none',
+            pageNo: '1',
+            adults: '1',
+            children: '0,17',
+            sort: 'BEST',
+            cabinClass: 'ECONOMY',
+            currency_code: 'AED'
         },
         headers: {
-            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY || '',
-            'X-RapidAPI-Host': 'flight-data-aggregator.p.rapidapi.com'
+            'x-rapidapi-host': 'booking-com15.p.rapidapi.com',
+            'x-rapidapi-key': process.env.RAPIDAPI_KEY || ''
         }
     };
 
     try {
+        // console.log("Flight Data Request:", JSON.stringify(options, null, 2));
         const response = await axios.request(options);
         return JSON.stringify(response.data);
-    } catch (error) {
-        console.error("Error fetching flight data:", error);
-        return '';
+    } catch (error: any) {
+        if (error.response) {
+            // The request was made and the server responded with a status code
+            // that falls out of the range of 2xx
+            console.error("Error fetching flight data:", error.response.data);
+            return `Error fetching flight data: ${error.response.status} ${error.response.statusText}`;
+        } else if (error.request) {
+            // The request was made but no response was received
+            console.error("Error fetching flight data: No response received");
+            return "Error fetching flight data: No response received";
+        } else {
+            // Something happened in setting up the request that triggered an Error
+            console.error('Error', error.message);
+            return `Error fetching flight data: ${error.message}`;
+        }
     }
 }
 
@@ -99,6 +125,8 @@ function formatPrompt(userInfo: UserInfo): string {
 }
 
 async function main() {
+    // console.log(process.env.BRAVE_API_KEY);
+    // console.log(process.env.RAPIDAPI_KEY);
     let destination = '';
     while (destination.length < 4) {
         destination = readlineSync.question('Enter your destination (at least 4 characters): ');
@@ -107,13 +135,15 @@ async function main() {
         }
     }
 
-    const source = readlineSync.question('Enter the source airport IATA code for your flight: ');
-    const destinationForFlight = readlineSync.question('Enter the destination airport IATA code for your flight: ');
+    const fromId = readlineSync.question('Enter the source airport IATA code for your flight (e.g., BOM.AIRPORT): ');
+    const toId = readlineSync.question('Enter the destination airport IATA code for your flight (e.g., DEL.AIRPORT): ');
+    const departDate = readlineSync.question('Enter the departure date (YYYY-MM-DD): ');
+    const returnDate = readlineSync.question('Enter the return date (YYYY-MM-DD): ');
 
     const userInfo: UserInfo = {
         destination: destination,
-        start_date: readlineSync.question('Enter the start date (YYYY-MM-DD): '),
-        end_date: readlineSync.question('Enter the end date (YYYY-MM-DD): '),
+        start_date: departDate,
+        end_date: returnDate,
         trip_type: readlineSync.question('Enter the type of trip (e.g., business, leisure, adventure): '),
         interests: readlineSync.question('Enter your interests (e.g., art, food, hiking): '),
         budget: readlineSync.question('Enter your budget (e.g., budget, mid-range, luxury): '),
@@ -131,7 +161,7 @@ async function main() {
         realTimeInfo += await searchRealTimeInfo(query) + '\n';
     }
 
-    const flightData = await getFlightData(source, destinationForFlight);
+    const flightData = await getFlightData(fromId, toId, departDate, returnDate);
     realTimeInfo += `\n\n## Flight Information:\n${flightData}`;
 
     const prompt = formatPrompt(userInfo) + "\n\n## Real-time Information:\n" + realTimeInfo;
