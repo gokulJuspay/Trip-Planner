@@ -1,9 +1,10 @@
-import { createBestAIProvider } from "@juspay/neurolink";
+import { createBestAIProvider, createAIProvider } from "@juspay/neurolink";
 import * as readlineSync from 'readline-sync';
 import * as fs from 'fs';
 import { BraveSearch } from 'brave-search';
 import axios from 'axios';
 import * as dotenv from 'dotenv';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 dotenv.config();
 
@@ -166,22 +167,74 @@ async function main() {
 
     const prompt = formatPrompt(userInfo) + "\n\n## Real-time Information:\n" + realTimeInfo;
 
-    // Auto-selects best available provider
-    const provider = await createBestAIProvider();
-    const result = await provider.streamText({
-        prompt: prompt,
-        timeout: "120s", // Optional: Set custom timeout (default: 30s)
-    });
-
-    if (result) {
-        let fullText = "";
-        for await (const chunk of result.textStream) {
-            fullText += chunk;
-            process.stdout.write(chunk);
+    // Use Google AI directly as a fallback
+    if (process.env.GOOGLE_AI_API_KEY) {
+        console.log("Using Google AI directly...");
+        try {
+            const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            
+            const result = await model.generateContentStream(prompt);
+            
+            let fullText = "";
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                fullText += chunkText;
+                process.stdout.write(chunkText);
+            }
+            
+            fs.writeFileSync('output.txt', fullText);
+            console.log("\n\nItinerary also written to output.txt");
+        } catch (error: any) {
+            console.error("\n❌ Failed to generate content with Google AI!");
+            console.error("Error:", error.message);
+            if (error.message.includes('API_KEY_INVALID')) {
+                console.log("\n⚠️  Your Google AI API key appears to be invalid.");
+                console.log("Please check your key at: https://aistudio.google.com/apikey");
+            }
         }
+    } else {
+        // Try neurolink providers
+        let provider;
+        try {
+            console.log("Detecting available AI providers...");
+            provider = await createBestAIProvider();
+            console.log("✅ Successfully initialized AI provider");
+            
+            const result = await provider.stream({
+                input: { text: prompt },
+                timeout: "120s",
+            });
 
-        fs.writeFileSync('output.txt', fullText);
-        console.log("\n\nItinerary also written to output.txt");
+            if (result) {
+                let fullText = "";
+                for await (const chunk of result.stream) {
+                    fullText += chunk.content;
+                    process.stdout.write(chunk.content);
+                }
+
+                fs.writeFileSync('output.txt', fullText);
+                console.log("\n\nItinerary also written to output.txt");
+            }
+        } catch (error: any) {
+            console.error("\n❌ Failed to initialize AI provider!");
+            console.error("Error details:", error.message);
+            console.log("\n📋 To use this application, you need to configure at least one AI provider:");
+            console.log("\n1. OpenAI (Paid):");
+            console.log("   - Get API key from: https://platform.openai.com/api-keys");
+            console.log("   - Set OPENAI_API_KEY in your .env file");
+            console.log("\n2. Google AI Studio (Free tier available):");
+            console.log("   - Get API key from: https://aistudio.google.com/apikey");
+            console.log("   - Set GOOGLE_AI_API_KEY in your .env file");
+            console.log("\n3. Ollama (Free, runs locally):");
+            console.log("   - Install from: https://ollama.com");
+            console.log("   - Run: ollama pull llama3.2");
+            console.log("   - No API key needed");
+            console.log("\n4. Anthropic Claude (Paid):");
+            console.log("   - Get API key from: https://console.anthropic.com");
+            console.log("   - Set ANTHROPIC_API_KEY in your .env file");
+            console.log("\n✅ After setting up a provider, run this application again.");
+        }
     }
 }
 
